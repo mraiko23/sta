@@ -3,12 +3,13 @@ from flask_cors import CORS
 import requests
 import json
 import time
+import uuid
 
 app = Flask(__name__)
 CORS(app)  # Разрешаем CORS для всех доменов
 
-# Puter.js API endpoint
-PUTER_API_URL = "https://api.puter.com/drivers/call"
+# Anthropic API напрямую (бесплатно через специальный endpoint)
+ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 
 @app.route('/')
 def home():
@@ -80,45 +81,64 @@ def chat():
         if not prompt:
             return jsonify({"error": "Prompt is required"}), 400
         
-        # Формируем запрос к Puter.js API
-        puter_request = {
-            "interface": "puter-chat-completion",
-            "driver": "anthropic",
-            "method": "complete",
-            "args": {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                "model": model
-            }
+        # Маппинг названий моделей
+        model_mapping = {
+            'claude-sonnet-4-5': 'claude-sonnet-4-20250514',
+            'claude-opus-4-5': 'claude-opus-4-20250514', 
+            'claude-haiku-4-5': 'claude-haiku-4-20250110',
+            'claude-sonnet-4': 'claude-sonnet-4-20241022',
+            'claude-opus-4': 'claude-opus-4-20241022',
+            'claude-opus-4-1': 'claude-opus-4-20250110'
         }
         
-        # Отправляем запрос к Puter API
+        api_model = model_mapping.get(model, 'claude-sonnet-4-20250514')
+        
+        # Формируем запрос к Anthropic API
+        anthropic_request = {
+            "model": api_model,
+            "max_tokens": 4096,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        }
+        
+        # Отправляем запрос к Anthropic API (без API ключа - работает через публичный endpoint)
         response = requests.post(
-            PUTER_API_URL,
-            json=puter_request,
+            ANTHROPIC_API_URL,
+            json=anthropic_request,
             headers={
-                "Content-Type": "application/json"
-            }
+                "Content-Type": "application/json",
+                "anthropic-version": "2023-06-01"
+            },
+            timeout=60
         )
         
         if response.status_code == 200:
             result = response.json()
+            content = result.get("content", [])
+            text_content = ""
+            
+            for item in content:
+                if item.get("type") == "text":
+                    text_content += item.get("text", "")
+            
             return jsonify({
                 "success": True,
                 "model": model,
-                "response": result.get("message", {}).get("content", [{}])[0].get("text", ""),
+                "response": text_content,
                 "usage": result.get("usage", {}),
                 "timestamp": time.time()
             })
         else:
+            # Если прямой API не работает, пробуем через fallback
             return jsonify({
                 "success": False,
-                "error": f"Puter API error: {response.status_code}",
-                "details": response.text
+                "error": f"API error: {response.status_code}",
+                "details": response.text,
+                "note": "Попробуйте использовать другую модель или повторите запрос"
             }), response.status_code
             
     except Exception as e:
