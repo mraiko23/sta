@@ -1,226 +1,40 @@
-from flask import Flask, request, jsonify, Response, stream_with_context
+from flask import Flask, send_file, jsonify
 from flask_cors import CORS
-import requests
-import json
-import time
-import uuid
+import os
 
 app = Flask(__name__)
-CORS(app)  # Разрешаем CORS для всех доменов
-
-# Anthropic API напрямую (бесплатно через специальный endpoint)
-ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
+CORS(app)
 
 @app.route('/')
 def home():
+    """Главная страница - AI Vibe Coder"""
+    return send_file('ai-vibe-coder-puter.html')
+
+@app.route('/api/status')
+def status():
+    """Статус сервера"""
     return jsonify({
         "status": "online",
-        "service": "AI Vibe Coder API Proxy",
-        "message": "Бесплатный безлимитный доступ к Claude API через Puter.js",
-        "endpoints": {
-            "/api/chat": "POST - Отправить сообщение Claude (обычный режим)",
-            "/api/chat/stream": "POST - Отправить сообщение Claude (стриминг)",
-            "/api/models": "GET - Список доступных моделей"
-        },
-        "available_models": [
-            "claude-sonnet-4-5",
-            "claude-opus-4-5",
-            "claude-haiku-4-5",
-            "claude-sonnet-4",
-            "claude-opus-4",
-            "claude-opus-4-1"
-        ]
-    })
-
-@app.route('/api/models', methods=['GET'])
-def get_models():
-    """Получить список доступных моделей"""
-    return jsonify({
+        "service": "AI Vibe Coder",
+        "method": "Puter.js (Frontend)",
+        "features": [
+            "✅ Бесплатный доступ к Claude через Puter.js",
+            "✅ Работает полностью в браузере",
+            "✅ Лимит: 100 запросов/час на модель",
+            "✅ Не требует API ключей"
+        ],
         "models": [
-            {
-                "id": "claude-sonnet-4-5",
-                "name": "Claude Sonnet 4.5",
-                "description": "Умный и эффективный для повседневных задач"
-            },
-            {
-                "id": "claude-opus-4-5",
-                "name": "Claude Opus 4.5",
-                "description": "Самая мощная модель для сложных задач"
-            },
-            {
-                "id": "claude-haiku-4-5",
-                "name": "Claude Haiku 4.5",
-                "description": "Быстрая и легкая модель"
-            },
-            {
-                "id": "claude-sonnet-4",
-                "name": "Claude Sonnet 4",
-                "description": "Предыдущее поколение Sonnet"
-            },
-            {
-                "id": "claude-opus-4",
-                "name": "Claude Opus 4",
-                "description": "Предыдущее поколение Opus"
-            },
-            {
-                "id": "claude-opus-4-1",
-                "name": "Claude Opus 4.1",
-                "description": "Улучшенная версия Opus 4"
-            }
+            "Claude 3.5 Sonnet",
+            "Claude 3 Opus",
+            "Claude 3 Haiku"
         ]
     })
 
-@app.route('/api/chat', methods=['POST'])
-def chat():
-    """Обычный режим чата (без стриминга)"""
-    try:
-        data = request.json
-        prompt = data.get('prompt', '')
-        model = data.get('model', 'claude-sonnet-4-5')
-        
-        if not prompt:
-            return jsonify({"error": "Prompt is required"}), 400
-        
-        # Маппинг названий моделей
-        model_mapping = {
-            'claude-sonnet-4-5': 'claude-sonnet-4-20250514',
-            'claude-opus-4-5': 'claude-opus-4-20250514', 
-            'claude-haiku-4-5': 'claude-haiku-4-20250110',
-            'claude-sonnet-4': 'claude-sonnet-4-20241022',
-            'claude-opus-4': 'claude-opus-4-20241022',
-            'claude-opus-4-1': 'claude-opus-4-20250110'
-        }
-        
-        api_model = model_mapping.get(model, 'claude-sonnet-4-20250514')
-        
-        # Формируем запрос к Anthropic API
-        anthropic_request = {
-            "model": api_model,
-            "max_tokens": 4096,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ]
-        }
-        
-        # Отправляем запрос к Anthropic API (без API ключа - работает через публичный endpoint)
-        response = requests.post(
-            ANTHROPIC_API_URL,
-            json=anthropic_request,
-            headers={
-                "Content-Type": "application/json",
-                "anthropic-version": "2023-06-01"
-            },
-            timeout=60
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
-            content = result.get("content", [])
-            text_content = ""
-            
-            for item in content:
-                if item.get("type") == "text":
-                    text_content += item.get("text", "")
-            
-            return jsonify({
-                "success": True,
-                "model": model,
-                "response": text_content,
-                "usage": result.get("usage", {}),
-                "timestamp": time.time()
-            })
-        else:
-            # Если прямой API не работает, пробуем через fallback
-            return jsonify({
-                "success": False,
-                "error": f"API error: {response.status_code}",
-                "details": response.text,
-                "note": "Попробуйте использовать другую модель или повторите запрос"
-            }), response.status_code
-            
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
-@app.route('/api/chat/stream', methods=['POST'])
-def chat_stream():
-    """Стриминг режим чата"""
-    try:
-        data = request.json
-        prompt = data.get('prompt', '')
-        model = data.get('model', 'claude-sonnet-4-5')
-        
-        if not prompt:
-            return jsonify({"error": "Prompt is required"}), 400
-        
-        def generate():
-            try:
-                # Формируем запрос к Puter.js API с stream: true
-                puter_request = {
-                    "interface": "puter-chat-completion",
-                    "driver": "anthropic",
-                    "method": "complete",
-                    "args": {
-                        "messages": [
-                            {
-                                "role": "user",
-                                "content": prompt
-                            }
-                        ],
-                        "model": model,
-                        "stream": True
-                    }
-                }
-                
-                # Отправляем запрос к Puter API
-                response = requests.post(
-                    PUTER_API_URL,
-                    json=puter_request,
-                    headers={
-                        "Content-Type": "application/json"
-                    },
-                    stream=True
-                )
-                
-                for line in response.iter_lines():
-                    if line:
-                        decoded_line = line.decode('utf-8')
-                        yield f"data: {decoded_line}\n\n"
-                        
-            except Exception as e:
-                error_data = json.dumps({"error": str(e)})
-                yield f"data: {error_data}\n\n"
-        
-        return Response(
-            stream_with_context(generate()),
-            mimetype='text/event-stream',
-            headers={
-                'Cache-Control': 'no-cache',
-                'X-Accel-Buffering': 'no'
-            }
-        )
-            
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
-@app.route('/api/health', methods=['GET'])
+@app.route('/api/health')
 def health():
-    """Health check endpoint"""
-    return jsonify({
-        "status": "healthy",
-        "timestamp": time.time()
-    })
+    """Health check для Render"""
+    return jsonify({"status": "healthy"})
 
 if __name__ == '__main__':
-    # Для Render используется переменная окружения PORT
-    import os
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
